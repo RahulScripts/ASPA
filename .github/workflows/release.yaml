@@ -1,0 +1,38 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'docs/**'
+      - '**.md'
+      - '.vscode/**'
+      - '.idea/**'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  ASPA-contracts-validate:
+    name: Run ASPA-contracts release
+    secrets: inherit
+    uses: ./.github/workflows/ASPA-contracts-ci.yaml
+
+  ASPA-contracts-release:
+    name: Run ASPA-contracts release
+    secrets: inherit
+    uses: ./.github/workflows/ASPA-contracts-cd.yaml
+    needs: ASPA-contracts-validate
+
+  ASPA-frontend-validate:
+    name: Run ASPA-frontend release
+    secrets: inherit
+    uses: ./.github/workflows/ASPA-frontend-ci.yaml
+
+  ASPA-frontend-release:
+    name: Run ASPA-frontend release
+    secrets: inherit
+    uses: ./.github/workflows/ASPA-frontend-cd.yaml
+    needs: ASPA-frontend-validate
