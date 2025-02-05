@@ -3,73 +3,90 @@ from algopy.arc4 import abimethod
 
 
 class aspa(ARC4Contract):
-    assetid: UInt64
-    unitaryprice: UInt64
+    # Asset-related state
+    asset_details: dict[
+        UInt64, Bytes
+    ]  # Maps asset ID to its details (e.g., name, description)
+    asset_quantities: dict[UInt64, UInt64]  # Maps asset ID to its available quantity
+    asset_prices: dict[UInt64, UInt64]  # Maps asset ID to its price per unit
+    asset_sellers: dict[UInt64, Bytes]  # Maps asset ID to the seller's address
 
-    # create the app
-    @abimethod(allow_actions=["NoOp"], create="require")
-    def create_application(self, asset_id: Asset, unitary_price: UInt64) -> None:
-        self.assetid = asset_id.id
-        self.unitaryprice = unitary_price
-
-    # update the listing price
+    # CREATE ASSET (Seller)
     @abimethod()
-    def set_price(self, unitary_price: UInt64) -> None:
-        assert Txn.sender == Global.creator_address
-        self.unitaryprice = unitary_price
-
-    # opt in to the asset that will be sold
-    @abimethod()
-    def opt_in_to_asset(self, mbrpay: gtxn.PaymentTransaction) -> None:
-        assert Txn.sender == Global.creator_address
-        assert not Global.current_application_address.is_opted_in(Asset(self.assetid))
-
+    def create_asset(
+        self,
+        asset_details: Bytes,
+        quantity: UInt64,
+        price: UInt64,
+        mbrpay: gtxn.PaymentTransaction,
+    ) -> UInt64:
+        """
+        Seller creates and lists an asset with a specific quantity and price.
+        """
+        # Ensure the seller pays the minimum balance requirement (MBR) for asset creation
         assert mbrpay.receiver == Global.current_application_address
-
         assert mbrpay.amount == Global.min_balance + Global.asset_opt_in_min_balance
 
-        itxn.AssetTransfer(
-            xfer_asset=self.assetid,
-            asset_receiver=Global.current_application_address,
-            asset_amount=0,
-        ).submit()
+        # Create a new Algorand Standard Asset (ASA)
+        asset_id = (
+            itxn.AssetConfig(
+                total=quantity,  # Total supply of the asset
+                decimals=0,  # No fractional ownership (whole units only)
+                unit_name="ASSET",
+                asset_name="Tokenized Asset",
+                manager=Global.current_application_address,
+                reserve=Global.current_application_address,
+                freeze=Global.current_application_address,
+                clawback=Global.current_application_address,
+                fee=1_000,
+            )
+            .submit()
+            .created_asset.id
+        )
 
-    # buy the asset
+        # Store asset details, quantity, price, and seller address
+        self.asset_details[asset_id] = asset_details
+        self.asset_quantities[asset_id] = quantity
+        self.asset_prices[asset_id] = price
+        self.asset_sellers[asset_id] = Txn.sender.bytes
+
+        return asset_id
+
+    # TRANSACTION (Buyer)
     @abimethod()
-    def buy(self, buyerTxn: gtxn.PaymentTransaction, quantity: UInt64) -> None:
-        assert buyerTxn.sender == Txn.sender
-        assert buyerTxn.receiver == Global.current_application_address
-        assert buyerTxn.amount == self.unitaryprice * quantity
+    def buy_asset(
+        self, asset_id: UInt64, quantity: UInt64, buyerTxn: gtxn.PaymentTransaction
+    ) -> None:
+        """
+        Buyer purchases an asset at the listed price.
+        """
+        # Ensure the asset has sufficient quantity
+        assert (
+            self.asset_quantities[asset_id] >= quantity
+        ), "Insufficient quantity available"
 
+        # Ensure the buyer pays the correct amount
+        total_price = self.asset_prices[asset_id] * quantity
+        assert buyerTxn.sender == Txn.sender, "Buyer must be the transaction sender"
+        assert (
+            buyerTxn.receiver == Global.current_application_address
+        ), "Payment must be sent to the app"
+        assert buyerTxn.amount == total_price, "Incorrect payment amount"
+
+        # Transfer the asset to the buyer
         itxn.AssetTransfer(
-            xfer_asset=self.assetid,
+            xfer_asset=asset_id,
             asset_receiver=Txn.sender,
             asset_amount=quantity,
-        ).submit()
-
-    # delete the app & take your assets and profit back
-    @abimethod(allow_actions=["DeleteApplication"])
-    def delete_application(self) -> None:
-        # Only allow the creator to delete the application
-        assert Txn.sender == Global.creator_address
-
-        # Send all the unsold assets to the creator
-        itxn.AssetTransfer(
-            xfer_asset=self.assetid,
-            asset_receiver=Global.creator_address,
-            # The amount is 0, but the asset_close_to field is set
-            # This means that ALL assets are being sent to the asset_close_to address
-            asset_amount=0,
-            # Close the asset to unlock the 0.1 ALGO that was locked in opt_in_to_asset
-            asset_close_to=Global.creator_address,
             fee=1_000,
         ).submit()
 
-        # Send the remaining balance to the creator
-        itxn.Payment(
-            receiver=Global.creator_address,
-            amount=0,
-            # Close the account to get back ALL the ALGO in the account
-            close_remainder_to=Global.creator_address,
-            fee=1_000,
-        ).submit()
+        # Update the remaining quantity of the asset
+        self.asset_quantities[asset_id] = self.asset_quantities[asset_id] - quantity
+
+        # If the asset is sold out, remove it from the marketplace
+        if self.asset_quantities[asset_id] == 0:
+            del self.asset_details[asset_id]
+            del self.asset_quantities[asset_id]
+            del self.asset_prices[asset_id]
+            del self.asset_sellers[asset_id]
