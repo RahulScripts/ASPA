@@ -1,0 +1,90 @@
+/* Sidebar Styling */
+.sidebar {
+  background-color: #2d3748;
+  color: white;
+  width: 250px;
+  padding: 20px;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar-title {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 40px;
+}
+
+.sidebar-button {
+  font-size: 18px;
+  color: white;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+  transition: background-color 0.3s ease;
+}
+
+.sidebar-button:hover {
+  background-color: #4fd1c5;
+}
+
+/* Main Content Styling */
+.main-content {
+  background-color: #f7fafc;
+  padding: 30px;
+}
+
+.user-name {
+  font-size: 30px;
+  font-weight: bold;
+}
+
+.user-email {
+  font-size: 16px;
+  color: #718096;
+}
+
+.account-overview {
+  background-color: #2b6cb0;
+  color: white;
+  padding: 30px;
+  border-radius: 10px;
+  margin-bottom: 40px;
+  text-align: center;
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: bold;
+  color: #2d3748;
+  margin-bottom: 20px;
+}
+
+.balance-amount {
+  font-size: 35px;
+  font-weight: bold;
+  color: #edf2f7;
+}
+
+.quick-action-btn {
+  background-color: #4fd1c5;
+  color: white;
+  font-weight: bold;
+  padding: 15px 20px;
+  border-radius: 8px;
+  transition: background-color 0.3s ease;
+}
+
+.quick-action-btn:hover {
+  background-color: #38b2ac;
+}
+
+.activity-card {
+  background-color: #edf2f7;
+  padding: 20px;
+  border-radius: 8px;
+  width: 100%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.activity-card:hover {
+  transform: translateY(-10px);
+}

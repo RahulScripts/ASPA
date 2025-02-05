@@ -11,6 +11,25 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
 
   const isKmd = (provider: Provider) => provider.metadata.name.toLowerCase() === 'kmd'
 
+  // Handle logout logic
+  const handleLogout = () => {
+    if (providers) {
+      // Find the active provider
+      const activeProvider = providers.find((provider) => provider.isActive)
+
+      if (activeProvider) {
+        // Disconnect the active provider
+        activeProvider.disconnect()
+        localStorage.removeItem('txnlab-use-wallet') // Clean up session
+        window.location.reload() // Reload to reset state
+      } else {
+        // If no active provider, do a forced cleanup
+        localStorage.removeItem('txnlab-use-wallet')
+        window.location.reload() // Reload to reset state
+      }
+    }
+  }
+
   return (
     <dialog id="connect_wallet_modal" className={`modal ${openModal ? 'modal-open' : ''}`}>
       <form method="dialog" className="modal-box">
@@ -28,11 +47,9 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
             providers?.map((provider) => (
               <button
                 data-test-id={`${provider.metadata.id}-connect`}
-                className="btn border-teal-800 border-1  m-2"
+                className="btn border-teal-800 border-1 m-2"
                 key={`provider-${provider.metadata.id}`}
-                onClick={() => {
-                  return provider.connect()
-                }}
+                onClick={() => provider.connect()}
               >
                 {!isKmd(provider) && (
                   <img
@@ -46,34 +63,16 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
             ))}
         </div>
 
-        <div className="modal-action ">
-          <button
-            data-test-id="close-wallet-modal"
-            className="btn"
-            onClick={() => {
-              closeModal()
-            }}
-          >
+        <div className="modal-action">
+          <button data-test-id="close-wallet-modal" className="btn" onClick={() => closeModal()}>
             Close
           </button>
+
           {activeAddress && (
             <button
               className="btn btn-warning"
               data-test-id="logout"
-              onClick={() => {
-                if (providers) {
-                  const activeProvider = providers.find((p) => p.isActive)
-                  if (activeProvider) {
-                    activeProvider.disconnect()
-                  } else {
-                    // Required for logout/cleanup of inactive providers
-                    // For instance, when you login to localnet wallet and switch network
-                    // to testnet/mainnet or vice verse.
-                    localStorage.removeItem('txnlab-use-wallet')
-                    window.location.reload()
-                  }
-                }
-              }}
+              onClick={handleLogout} // Using handleLogout to cleanly disconnect and reset
             >
               Logout
             </button>
@@ -83,4 +82,5 @@ const ConnectWallet = ({ openModal, closeModal }: ConnectWalletInterface) => {
     </dialog>
   )
 }
+
 export default ConnectWallet
