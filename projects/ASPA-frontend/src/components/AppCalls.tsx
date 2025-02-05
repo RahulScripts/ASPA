@@ -1,10 +1,10 @@
+import { AlgorandClient } from '@algorandfoundation/algokit-utils'
+import { OnSchemaBreak, OnUpdate } from '@algorandfoundation/algokit-utils/types/app'
 import { useWallet } from '@txnlab/use-wallet'
 import { useSnackbar } from 'notistack'
 import { useState } from 'react'
-import { AspaFactory } from '../contracts/Aspa'
-import { OnSchemaBreak, OnUpdate } from '@algorandfoundation/algokit-utils/types/app'
+import { AspaFactory } from '../contracts/aspa'
 import { getAlgodConfigFromViteEnvironment, getIndexerConfigFromViteEnvironment } from '../utils/network/getAlgoClientConfigs'
-import { AlgorandClient } from '@algorandfoundation/algokit-utils'
 
 interface AppCallsInterface {
   openModal: boolean
