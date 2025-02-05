@@ -1,126 +1,75 @@
-from typing import TypedDict, cast
-
-from algopy import ARC4Contract, UInt64, arc4
-from algosdk import account
-from algosdk.transaction import (
-    AssetConfigTxn,
-    AssetTransferTxn,
-    SignedTransaction,
-    SuggestedParams,
-    wait_for_confirmation,
-)
-from algosdk.v2client import algod
-
-# Algorand client setup
-ALGOD_ADDRESS = "https://testnet-api.algonode.cloud"
-ALGOD_TOKEN = ""
-algod_client = algod.AlgodClient(ALGOD_TOKEN, ALGOD_ADDRESS)
-
-# Asset parameters
-ASSET_NAME = "TokenizedAsset"
-UNIT_NAME = "TA"
-TOTAL_SUPPLY = 1000000  # Uint64
-DECIMALS = 2  # Uint64
+from algopy import *
+from algopy.arc4 import abimethod
 
 
-class TransactionInfo(TypedDict, total=False):
-    """TypedDict for transaction info response."""
+class aspa(ARC4Contract):
+    assetid: UInt64
+    unitaryprice: UInt64
 
-    asset_index: int
-    confirmed_round: int
+    # create the app
+    @abimethod(allow_actions=["NoOp"], create="require")
+    def create_application(self, asset_id: Asset, unitary_price: UInt64) -> None:
+        self.assetid = asset_id.id
+        self.unitaryprice = unitary_price
 
+    # update the listing price
+    @abimethod()
+    def set_price(self, unitary_price: UInt64) -> None:
+        assert Txn.sender == Global.creator_address
+        self.unitaryprice = unitary_price
 
-class AutonomousAsset(ARC4Contract):
-    """Class for autonomous asset management."""
+    # opt in to the asset that will be sold
+    @abimethod()
+    def opt_in_to_asset(self, mbrpay: gtxn.PaymentTransaction) -> None:
+        assert Txn.sender == Global.creator_address
+        assert not Global.current_application_address.is_opted_in(Asset(self.assetid))
 
-    @arc4.abimethod
-    def create_asset(self, creator_private_key: str, creator_address: str) -> UInt64:
-        """
-        Create a new asset.
-        """
-        params: SuggestedParams = algod_client.suggested_params()
-        txn: AssetConfigTxn = AssetConfigTxn(
-            sender=creator_address,
-            sp=params,
-            total=TOTAL_SUPPLY,
-            default_frozen=False,
-            unit_name=UNIT_NAME,
-            asset_name=ASSET_NAME,
-            manager=creator_address,
-            reserve=creator_address,
-            freeze=creator_address,
-            clawback=creator_address,
-            decimals=DECIMALS,
-        )
-        signed_txn: SignedTransaction = txn.sign(creator_private_key)
-        txid: str = algod_client.send_transaction(signed_txn)
-        wait_for_confirmation(algod_client, txid)
+        assert mbrpay.receiver == Global.current_application_address
 
-        # Handle response typing explicitly
-        ptx_response = algod_client.pending_transaction_info(txid)
-        if isinstance(ptx_response, bytes):
-            raise ValueError("Unexpected bytes response")
+        assert mbrpay.amount == Global.min_balance + Global.asset_opt_in_min_balance
 
-        ptx = cast(TransactionInfo, ptx_response)
-        if "asset-index" in ptx_response:  # Directly check original response
-            return UInt64(int(ptx_response["asset-index"]))
-        raise ValueError("Asset index not found in transaction response")
+        itxn.AssetTransfer(
+            xfer_asset=self.assetid,
+            asset_receiver=Global.current_application_address,
+            asset_amount=0,
+        ).submit()
 
-    # Rest of the methods remain the same...
-    def opt_in_to_asset(
-        self, receiver_private_key: str, receiver_address: str, asset_id: UInt64
-    ) -> None:
-        """
-        Opt-in to an asset.
-        """
-        params: SuggestedParams = algod_client.suggested_params()
-        txn: AssetTransferTxn = AssetTransferTxn(
-            sender=receiver_address,
-            sp=params,
-            receiver=receiver_address,
-            amt=0,
-            index=asset_id,
-        )
-        signed_txn: SignedTransaction = txn.sign(receiver_private_key)
-        txid: str = algod_client.send_transaction(signed_txn)
-        wait_for_confirmation(algod_client, txid)
+    # buy the asset
+    @abimethod()
+    def buy(self, buyerTxn: gtxn.PaymentTransaction, quantity: UInt64) -> None:
+        assert buyerTxn.sender == Txn.sender
+        assert buyerTxn.receiver == Global.current_application_address
+        assert buyerTxn.amount == self.unitaryprice * quantity
 
-    def transfer_asset(
-        self,
-        sender_private_key: str,
-        sender_address: str,
-        receiver_address: str,
-        asset_id: UInt64,
-        amount: UInt64,
-    ) -> None:
-        """
-        Transfer an asset.
-        """
-        params: SuggestedParams = algod_client.suggested_params()
-        txn: AssetTransferTxn = AssetTransferTxn(
-            sender=sender_address,
-            sp=params,
-            receiver=receiver_address,
-            amt=amount,
-            index=asset_id,
-        )
-        signed_txn: SignedTransaction = txn.sign(sender_private_key)
-        txid: str = algod_client.send_transaction(signed_txn)
-        wait_for_confirmation(algod_client, txid)
+        itxn.AssetTransfer(
+            xfer_asset=self.assetid,
+            asset_receiver=Txn.sender,
+            asset_amount=quantity,
+        ).submit()
 
+    # delete the app & take your assets and profit back
+    @abimethod(allow_actions=["DeleteApplication"])
+    def delete_application(self) -> None:
+        # Only allow the creator to delete the application
+        assert Txn.sender == Global.creator_address
 
-# Autonomous execution
-contract = AutonomousAsset()
-creator_private_key, creator_address = account.generate_account()
-receiver_private_key, receiver_address = account.generate_account()
+        # Send all the unsold assets to the creator
+        itxn.AssetTransfer(
+            xfer_asset=self.assetid,
+            asset_receiver=Global.creator_address,
+            # The amount is 0, but the asset_close_to field is set
+            # This means that ALL assets are being sent to the asset_close_to address
+            asset_amount=0,
+            # Close the asset to unlock the 0.1 ALGO that was locked in opt_in_to_asset
+            asset_close_to=Global.creator_address,
+            fee=1_000,
+        ).submit()
 
-print(f"Creator Address: {creator_address}")
-print(f"Receiver Address: {receiver_address}")
-
-asset_id = contract.create_asset(creator_private_key, creator_address)
-contract.opt_in_to_asset(receiver_private_key, receiver_address, asset_id)
-contract.transfer_asset(
-    creator_private_key, creator_address, receiver_address, asset_id, UInt64(100)
-)
-
-print("✅ Asset tokenization and transfer completed autonomously.")
+        # Send the remaining balance to the creator
+        itxn.Payment(
+            receiver=Global.creator_address,
+            amount=0,
+            # Close the account to get back ALL the ALGO in the account
+            close_remainder_to=Global.creator_address,
+            fee=1_000,
+        ).submit()
